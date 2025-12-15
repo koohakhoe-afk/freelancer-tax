@@ -1,0 +1,38 @@
+body {
+  background: #f5f7fb;
+  font-family: system-ui, sans-serif;
+}
+
+.container {
+  max-width: 420px;
+  margin: 50px auto;
+  padding: 24px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+
+h1 {
+  text-align: center;
+}
+
+label {
+  display: block;
+  margin-top: 16px;
+  font-weight: 600;
+}
+
+input, select {
+  width: 100%;
+  padding: 10px;
+  margin-top: 6px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+}
+
+.result {
+  margin-top: 24px;
+  padding: 16px;
+  background: #f0f4ff;
+  border-radius: 8px;
+}
