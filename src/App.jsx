@@ -35,19 +35,19 @@ function App() {
   const [records, setRecords] = useState([]);
   const [yearFilter, setYearFilter] = useState("");
 
-  /* 로그인 상태 확인 */
+  // 로그인 상태 확인
   useEffect(() => {
     return onAuthStateChanged(auth, setUser);
   }, []);
 
-  /* Firestore에서 기록 불러오기 */
+  // Firestore에서 기록 불러오기
   useEffect(() => {
     if (!user) return setRecords([]);
 
     const fetchRecords = async () => {
       const q = query(
-        collection(db, "records", user.uid, "monthly"),
-        orderBy("month", "desc")
+        collection(db, "records", user.uid, "daily"),
+        orderBy("date", "desc")
       );
       const snap = await getDocs(q);
       const data = snap.docs.map((d) => {
@@ -64,62 +64,67 @@ function App() {
     fetchRecords();
   }, [user]);
 
-  /* 세율 자동 선택 */
+  // 세율 자동 선택
   useEffect(() => {
     if (taxType === "3.3") setTaxRate(0.033);
     if (taxType === "simple") setTaxRate(0.1);
     if (taxType === "general") setTaxRate(0.06);
   }, [taxType]);
 
-  /* 계산 */
+  // 계산
   const incomeNum = Number(income);
   const expenseNum = incomeNum * (Number(expenseRate) / 100);
   const taxable = incomeNum - expenseNum;
   const tax = Math.round(taxable * taxRate);
   const netIncome = taxable - tax;
 
-  /* 저장 (중복 방지 + 덮어쓰기 개선) */
+  // 저장 (일자별/건별)
   const saveRecord = async () => {
-    if (!user || !month) return;
+    if (!user || !month || !income) return;
 
-    const exists = records.find((r) => r.month === month);
-
+    const today = new Date();
+    const timestamp = today.getTime(); // 고유 ID
     const record = {
+      date: today.toISOString().slice(0, 10),
       month,
-      year: month.slice(0, 4),
       income: incomeNum,
       tax,
       netIncome,
     };
 
-    if (exists) {
-      if (!window.confirm(`${month} 기록이 이미 있습니다. 덮어쓰시겠습니까?`))
-        return;
-    }
-
     // Firestore 저장
-    await setDoc(doc(db, "records", user.uid, "monthly", month), record);
+    await setDoc(
+      doc(db, "records", user.uid, "daily", timestamp.toString()),
+      record
+    );
 
     // 로컬 상태 업데이트
-    setRecords((prev) => {
-      if (exists) {
-        return prev.map((r) => (r.month === month ? record : r));
-      } else {
-        return [record, ...prev];
-      }
-    });
+    setRecords((prev) => [record, ...prev]);
+    setIncome("");
+    setExpenseRate("");
   };
 
-  /* 연도 필터 적용 */
+  // 연도 필터 적용
   const filtered = yearFilter
     ? records.filter((r) => r.month?.startsWith(yearFilter))
     : records;
 
+  // 월별 합계 계산
+  const monthlyMap = {};
+  filtered.forEach((r) => {
+    if (!monthlyMap[r.month])
+      monthlyMap[r.month] = { income: 0, tax: 0, netIncome: 0 };
+    monthlyMap[r.month].income += r.income;
+    monthlyMap[r.month].tax += r.tax;
+    monthlyMap[r.month].netIncome += r.netIncome;
+  });
+
+  // 연간 합계
   const totalIncome = filtered.reduce((s, r) => s + r.income, 0);
   const totalTax = filtered.reduce((s, r) => s + r.tax, 0);
   const totalNet = filtered.reduce((s, r) => s + r.netIncome, 0);
 
-  /* 로그인 */
+  // 로그인
   const login = async () => {
     await signInWithPopup(auth, new GoogleAuthProvider());
   };
@@ -183,7 +188,7 @@ function App() {
       </div>
 
       <button className="primary" onClick={saveRecord}>
-        월별 기록 저장
+        기록 저장
       </button>
 
       {/* 연도 필터 */}
@@ -202,15 +207,40 @@ function App() {
           ))}
       </select>
 
-      {/* 기록 */}
-      <ul>
-        {filtered.map((r) => (
-          <li key={r.month}>
-            {r.month} | 수입 {r.income.toLocaleString()}원 | 세금{" "}
-            {r.tax.toLocaleString()}원 | 실수령 {r.netIncome.toLocaleString()}원
-          </li>
-        ))}
-      </ul>
+      {/* 기록 테이블 */}
+      <table className="record-table">
+        <thead>
+          <tr>
+            <th>일자</th>
+            <th>월</th>
+            <th>수입(원)</th>
+            <th>세금(원)</th>
+            <th>실수령(원)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((r, idx) => (
+            <tr key={idx}>
+              <td>{r.date}</td>
+              <td>{r.month}</td>
+              <td>{r.income.toLocaleString()}</td>
+              <td>{r.tax.toLocaleString()}</td>
+              <td>{r.netIncome.toLocaleString()}</td>
+            </tr>
+          ))}
+
+          {/* 월별 합계 행 */}
+          {Object.entries(monthlyMap).map(([m, sum]) => (
+            <tr key={m} className="total-row">
+              <td colSpan={1}>합계 ({m})</td>
+              <td></td>
+              <td>{sum.income.toLocaleString()}</td>
+              <td>{sum.tax.toLocaleString()}</td>
+              <td>{sum.netIncome.toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       <div className="result">
         <h2>연간 합계</h2>
