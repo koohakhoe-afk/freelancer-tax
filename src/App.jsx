@@ -35,7 +35,7 @@ function App() {
   const [records, setRecords] = useState([]);
   const [yearFilter, setYearFilter] = useState("");
 
-  /* 로그인 상태 */
+  /* 로그인 상태 확인 */
   useEffect(() => {
     return onAuthStateChanged(auth, setUser);
   }, []);
@@ -53,11 +53,10 @@ function App() {
       const data = snap.docs.map((d) => {
         const r = d.data();
         return {
-          month: r.month || "",
-          year: r.month ? r.month.slice(0, 4) : "",
-          income: Number(r.income) || 0,
-          tax: Number(r.tax) || 0,
-          netIncome: Number(r.netIncome) || 0,
+          ...r,
+          income: Number(r.income),
+          tax: Number(r.tax),
+          netIncome: Number(r.netIncome),
         };
       });
       setRecords(data);
@@ -73,21 +72,17 @@ function App() {
   }, [taxType]);
 
   /* 계산 */
-  const incomeNum = Number(income) || 0;
-  const expenseNum = incomeNum * (Number(expenseRate) / 100 || 0);
+  const incomeNum = Number(income);
+  const expenseNum = incomeNum * (Number(expenseRate) / 100);
   const taxable = incomeNum - expenseNum;
   const tax = Math.round(taxable * taxRate);
   const netIncome = taxable - tax;
 
-  /* 저장 (중복 방지) */
+  /* 저장 (중복 방지 + 덮어쓰기 개선) */
   const saveRecord = async () => {
     if (!user || !month) return;
 
     const exists = records.find((r) => r.month === month);
-    if (exists) {
-      if (!window.confirm(`${month} 기록이 이미 있습니다. 덮어쓰시겠습니까?`))
-        return;
-    }
 
     const record = {
       month,
@@ -97,64 +92,36 @@ function App() {
       netIncome,
     };
 
+    if (exists) {
+      if (!window.confirm(`${month} 기록이 이미 있습니다. 덮어쓰시겠습니까?`))
+        return;
+    }
+
+    // Firestore 저장
     await setDoc(doc(db, "records", user.uid, "monthly", month), record);
 
-    setRecords((prev) => [
-      record,
-      ...prev.filter((r) => r.month !== month),
-    ]);
+    // 로컬 상태 업데이트
+    setRecords((prev) => {
+      if (exists) {
+        return prev.map((r) => (r.month === month ? record : r));
+      } else {
+        return [record, ...prev];
+      }
+    });
   };
 
   /* 연도 필터 적용 */
   const filtered = yearFilter
-    ? records.filter((r) => r.year === yearFilter)
+    ? records.filter((r) => r.month?.startsWith(yearFilter))
     : records;
 
-  const yearOptions = [...new Set(records.map((r) => r.year))].filter(
-    Boolean
-  );
-
-  const totalIncome = filtered.reduce((sum, r) => sum + (r.income || 0), 0);
-  const totalTax = filtered.reduce((sum, r) => sum + (r.tax || 0), 0);
-  const totalNet = filtered.reduce((sum, r) => sum + (r.netIncome || 0), 0);
+  const totalIncome = filtered.reduce((s, r) => s + r.income, 0);
+  const totalTax = filtered.reduce((s, r) => s + r.tax, 0);
+  const totalNet = filtered.reduce((s, r) => s + r.netIncome, 0);
 
   /* 로그인 */
   const login = async () => {
     await signInWithPopup(auth, new GoogleAuthProvider());
-  };
-
-  /* CSV 다운로드 */
-  const downloadCSV = () => {
-    if (!filtered.length) return;
-
-    const header = ["월", "수입", "세금", "실수령"];
-    const rows = filtered.map((r) => [
-      r.month,
-      r.income,
-      r.tax,
-      r.netIncome,
-    ]);
-
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [header, ...rows]
-        .map((e) => e.join(","))
-        .join("\n");
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `freelancer_records.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  /* 전체 삭제 */
-  const clearAll = () => {
-    if (!window.confirm("모든 기록을 삭제하시겠습니까?")) return;
-    setRecords([]);
-    // 실제 Firestore 삭제는 구현 필요
   };
 
   return (
@@ -222,15 +189,17 @@ function App() {
       {/* 연도 필터 */}
       <label>연도 선택:</label>
       <select
-        value={yearFilter}
         onChange={(e) => setYearFilter(e.target.value)}
+        value={yearFilter}
       >
         <option value="">전체 연도</option>
-        {yearOptions.map((y) => (
-          <option key={y} value={y}>
-            {y}
-          </option>
-        ))}
+        {[...new Set(records.map((r) => r.month?.slice(0, 4)))].filter(Boolean)
+          .sort()
+          .map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
       </select>
 
       {/* 기록 */}
@@ -248,12 +217,6 @@ function App() {
         <p>총 수입: {totalIncome.toLocaleString()} 원</p>
         <p>총 세금: {totalTax.toLocaleString()} 원</p>
         <p>총 실수령: {totalNet.toLocaleString()} 원</p>
-      </div>
-
-      {/* CSV 다운로드 / 전체 삭제 */}
-      <div className="actions">
-        <button onClick={downloadCSV}>📁 CSV 다운로드</button>
-        <button onClick={clearAll}>전체 삭제</button>
       </div>
 
       <ResponsiveContainer width="100%" height={300}>
