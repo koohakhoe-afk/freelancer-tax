@@ -1,0 +1,5 @@
+[
+  {"uid":"USER_UID_1","date":"2025-12-20","income":100000,"tax":10000,"description":"웹사이트 제작"},
+  {"uid":"USER_UID_1","date":"2025-12-21","income":50000,"tax":5000,"description":"앱 디자인"},
+  {"uid":"USER_UID_2","date":"2025-12-20","income":150000,"tax":15000,"description":"SEO 컨설팅"}
+]
